@@ -120,4 +120,5 @@ class AppProcess(ABC):
 
         self.process.terminate()
         self.process.join()
+        self.cleanup()
         self.process = None
