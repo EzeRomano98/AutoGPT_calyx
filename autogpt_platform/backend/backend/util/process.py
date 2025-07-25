@@ -1,3 +1,11 @@
+"""
+process.py - Utilidades para la gestión de procesos en segundo plano en AutoGPT Platform.
+
+Este módulo define la clase base AppProcess, que permite ejecutar componentes de la aplicación como procesos independientes,
+proporcionando mecanismos para iniciar, detener, limpiar y monitorear procesos de manera segura y extensible.
+Incluye utilidades para el manejo de nombres de servicio, configuración de logging y métricas, y control de señales.
+"""
+
 import logging
 import os
 import signal
@@ -14,17 +22,31 @@ _SERVICE_NAME = "MainProcess"
 
 
 def get_service_name():
+    """
+    Retorna el nombre del servicio actual para propósitos de logging y monitoreo.
+    """
     return _SERVICE_NAME
 
 
 def set_service_name(name: str):
+    """
+    Establece el nombre global del servicio para el proceso actual.
+    """
     global _SERVICE_NAME
     _SERVICE_NAME = name
 
 
 class AppProcess(ABC):
     """
-    A class to represent an object that can be executed in a background process.
+    Clase base abstracta para representar un componente ejecutable en un proceso independiente.
+
+    Heredar de AppProcess permite definir servicios o tareas que pueden ejecutarse en segundo plano o en primer plano,
+    con soporte para manejo de señales, logging, métricas y limpieza de recursos.
+
+    Métodos a sobrescribir:
+        - run(): Lógica principal del proceso.
+        - cleanup(): (opcional) Limpieza de recursos al finalizar el proceso.
+        - health_check(): (opcional) Verificación de salud personalizada.
     """
 
     process: Optional[Process] = None
@@ -33,34 +55,41 @@ class AppProcess(ABC):
     configure_logging()
     sentry_init()
 
-    # Methods that are executed INSIDE the process #
-
     @abstractmethod
     def run(self):
         """
-        The method that will be executed in the process.
+        Método principal que se ejecuta dentro del proceso hijo.
+        Debe ser implementado por las subclases para definir la lógica del proceso.
         """
         pass
 
     @classmethod
     @property
     def service_name(cls) -> str:
+        """
+        Retorna el nombre del servicio, por defecto el nombre de la clase.
+        """
         return cls.__name__
 
     def cleanup(self):
         """
-        Implement this method on a subclass to do post-execution cleanup,
-        e.g. disconnecting from a database or terminating child processes.
+        Método opcional para limpiar recursos después de la ejecución del proceso.
+        Sobrescribir en subclases si se requiere cerrar conexiones, archivos, etc.
         """
         pass
 
     def health_check(self):
         """
-        A method to check the health of the process.
+        Método opcional para verificar la salud del proceso.
+        Puede ser sobrescrito para implementar chequeos personalizados.
         """
         pass
 
     def execute_run_command(self, silent):
+        """
+        Ejecuta el método run() dentro del proceso hijo, configurando el entorno y manejando señales.
+        Si 'silent' es True, redirige stdout y stderr a /dev/null.
+        """
         signal.signal(signal.SIGTERM, self._self_terminate)
 
         try:
@@ -75,27 +104,35 @@ class AppProcess(ABC):
             logger.warning(f"[{self.service_name}] Terminated: {e}; quitting...")
 
     def _self_terminate(self, signum: int, frame):
+        """
+        Manejador de señal SIGTERM para realizar limpieza antes de salir.
+        """
         self.cleanup()
         sys.exit(0)
 
-    # Methods that are executed OUTSIDE the process #
-
     def __enter__(self):
+        """
+        Permite usar AppProcess como contexto, iniciando el proceso en segundo plano.
+        """
         self.start(background=True)
         return self
 
     def __exit__(self, *args, **kwargs):
+        """
+        Detiene el proceso al salir del contexto.
+        """
         self.stop()
 
     def start(self, background: bool = False, silent: bool = False, **proc_args) -> int:
         """
-        Start the background process.
+        Inicia el proceso.
+
         Args:
-            background: Whether to run the process in the background.
-            silent: Whether to disable stdout and stderr.
-            proc_args: Additional arguments to pass to the process.
+            background (bool): Si es True, ejecuta en segundo plano.
+            silent (bool): Si es True, suprime stdout y stderr.
+            proc_args: Argumentos adicionales para multiprocessing.Process.
         Returns:
-            the process id or 0 if the process is not running in the background.
+            int: PID del proceso si es en segundo plano, 0 si es en primer plano.
         """
         if not background:
             self.execute_run_command(silent)
@@ -113,7 +150,7 @@ class AppProcess(ABC):
 
     def stop(self):
         """
-        Stop the background process.
+        Detiene el proceso en segundo plano y ejecuta la limpieza de recursos.
         """
         if not self.process:
             return
