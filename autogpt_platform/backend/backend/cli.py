@@ -24,7 +24,6 @@ def get_pid() -> int | None:
     if not file_path.exists():
         return None
 
-    os.makedirs(file_path.parent, exist_ok=True)
     with open(file_path, "r", encoding="utf-8") as file:
         pid = file.read()
     try:
@@ -188,16 +187,18 @@ def graph(server_address: str):
 @test.command()
 @click.argument("graph_id")
 @click.argument("content")
-def execute(graph_id: str, content: dict):
+def execute(graph_id: str, content: str):
     """
     Create an event graph
     """
     import requests
+    import json
 
     headers = {"Content-Type": "application/json"}
 
     execute_url = f"http://0.0.0.0:8000/graphs/{graph_id}/execute"
-    requests.post(execute_url, headers=headers, json=content)
+    content_dict = json.loads(content)
+    requests.post(execute_url, headers=headers, json=content_dict)
 
 
 @test.command()
